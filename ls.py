@@ -1,3 +1,5 @@
+from __future__ import print_function  
+
 import curses, os, sys, traceback, stat, time, datetime, logging, errno, shutil
 from globals import *
 from stat import *
@@ -33,7 +35,7 @@ def preparelist():
    line = {'name': 'NAME', 'permissions': 'drwxrwxrwx', 'uid': 'OWNER', 'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
    gb.cmdoutdict.append(line)
 
-   # append the rest of lines   
+   # append the rest of lines
    gb.cmdoutdict += cmdoutdirs + cmdoutfiles
 
 # get stat info of a file/dir
@@ -80,14 +82,7 @@ def initialisedisplayoptions():
    gb.lastModDate = True
    gb.lastModTime = True
 
-# print rows on a selected list of output lines
-def printrows(listOfLines):
-   for line in listOfLines:
-      colorpair = ( gb.green ) if isdir(line['name']) else gb.white
-      printrow(line, colorpair)
-      gb.winrow += 1
-
-# print a single row 
+# print a single row
 def printrow(dictline, format):
    gb.wincol = 0;
    printcol(gb.wincol, dictline, 'name', format, True)
@@ -115,56 +110,50 @@ def colwidth(colname, isOn):
       length += 2
    return length
 
-
-# display current dir contents
-def displaydir():
+def displaydir()  :
    # clear screen
-   gb.scrn.clear()
+   gb.scrn.erase()
+   gb.scrn.addstr(curses.LINES - 1, 90, str(gb.highlightLineNum))
+   gb.scrn.addstr(curses.LINES - 1, 95, str(gb.index))
+   # now paint the rows
+   top = gb.startrow + 1
+   bottom = gb.startrow+curses.LINES
 
-   # prepare to paint current dir contents
    gb.winrow = 0
-   gb.startrow = 0
 
    printrow(gb.cmdoutdict[0], (gb.purple | curses.A_BOLD))
    gb.winrow += 1
 
    if len(gb.cmdoutdict) > 1:
-      if ( gb.index > len(gb.cmdoutdict) ):
-         gb.index = len(gb.cmdoutdict) - 1
-      
-      printrows(gb.cmdoutdict[1 : gb.index])
-      color = gb.green if isdir(gb.cmdoutdict[gb.index]['name']) else gb.white
-      printrow(gb.cmdoutdict[gb.index], color | curses.A_BOLD)
-      gb.winrow += 1
+      if ( gb.highlightLineNum >= len(gb.cmdoutdict) ):
+         gb.highlightLineNum = len(gb.cmdoutdict) - 1
+         gb.index = gb.highlightLineNum
 
-      printrows(gb.cmdoutdict[gb.index + 1 : len(gb.cmdoutdict) + 1])
+      for line in gb.cmdoutdict[top:bottom]:
+         # highlight current line
+         color = gb.green if isdir(line['name']) else gb.white
+         format = curses.A_NORMAL if gb.winrow != gb.highlightLineNum else curses.A_BOLD
+
+         printrow(line, color | format)
+         gb.winrow += 1
 
    gb.scrn.refresh()
-   curses.setsyx(gb.index, 0)
-   curses.doupdate()
 
-# move highlight up/down one line
 def updown(inc):
-   tmp = gb.index + inc
-   # ignore attempts to go off the edge of the screen
-   if 0 < tmp < len(gb.cmdoutdict):
-      # unhighlight the current line by rewriting it in default attributes
-      tmprow = gb.cmdoutdict[gb.index]
+   nextLineNum = gb.highlightLineNum + inc
+   # paging
+   if inc == gb.UP and gb.highlightLineNum == 1 and gb.startrow != 0:
+      gb.startrow += gb.UP
+      return
+   elif inc == gb.DOWN and nextLineNum == curses.LINES and (gb.startrow+curses.LINES) != len(gb.cmdoutdict):
+      gb.startrow += gb.DOWN
+      return
 
-      color = gb.green if isdir(tmprow['name']) else gb.white
-      gb.winrow = gb.index
-      printrow(tmprow, color)
-
-      # highlight the previous/next line
-      gb.winrow = tmp
-
-      ln = gb.cmdoutdict[gb.winrow]
-      highlightcolor = gb.green if isdir(ln['name']) else gb.white
-      printrow(ln, (highlightcolor | curses.A_BOLD))
-      
-      gb.index += inc
-      
-      gb.scrn.refresh()
+   # scroll highlight line
+   if inc == gb.UP and (gb.startrow != 0 or gb.highlightLineNum != 1):
+      gb.highlightLineNum = nextLineNum
+   elif inc == gb.DOWN and (gb.startrow+gb.highlightLineNum+1) != len(gb.cmdoutdict) and gb.highlightLineNum != curses.LINES:
+      gb.highlightLineNum = nextLineNum
 
 # check if the item on current line is a directory
 # return true or false
@@ -174,7 +163,7 @@ def isdir(name):
 def cd(name):
    try:
       gb.scrn.refresh()
-      #index = gb.index if gb.index != 0 else 1
+      #index = gb.highlightLineNum if gb.highlightLineNum != 0 else 1
       os.chdir(name)
       rerun()
    except OSError as e:
@@ -214,7 +203,7 @@ def removeItem(name):
 # initlialise colours that will be used in the program
 def initialisecolours():
    background = curses.COLOR_BLACK
-   # color pairs for display 
+   # color pairs for display
    # green for dirs
    curses.init_pair(2, curses.COLOR_GREEN, background)
    # white for files
@@ -241,10 +230,8 @@ def rerun():
    gb.ls = preparelist()
    setcolswidths()
    displaydir()
-   #gb.scrn.addstr(curses.LINES - 1, 0, str(gb.index))
 
 def main():
-   gb.index = 1
    # window setup
    gb.scrn = curses.initscr()
    curses.noecho()
@@ -256,23 +243,27 @@ def main():
    gb.scrn.bkgd(' ', curses.color_pair(5))
    initialisecolours()
    initialisedisplayoptions()
+   
+   gb.highlightLineNum = 1
+   gb.index = 1;
+   gb.startrow = 0
 
-   gb.ls = preparelist()
+   preparelist()
    setcolswidths()
-   displaydir()
 
    # user command loop
    while True:
+      displaydir()
       # get user command
       c = gb.scrn.getch()
 
       if c == ord("q"): break
       # move up/down
-      elif c == curses.KEY_UP: updown(-1)
-      elif c == curses.KEY_DOWN: updown(1)
+      elif c == curses.KEY_UP: updown(gb.UP)
+      elif c == curses.KEY_DOWN: updown(gb.DOWN)
       # display options
       elif c == ord("p"):
-         gb.protbits =  not gb.protbits
+         gb.protbits = not gb.protbits
          rerun()
       elif c == ord("o"):
          gb.owner = not gb.owner
@@ -294,7 +285,7 @@ def main():
          initialisedisplayoptions()
          rerun()
       elif c == ord("\n"):
-         cd(gb.cmdoutdict[gb.index]['name'])
+         cd(gb.cmdoutdict[gb.highlightLineNum]['name'])
       elif c == curses.KEY_BACKSPACE:
          cd('..')
       elif c == ord("m"):
@@ -303,7 +294,7 @@ def main():
          mkdir(dirname)
          curses.noecho()
       elif c == ord("r"):
-         removeItem(gb.cmdoutdict[gb.index]['name'])
+         removeItem(gb.cmdoutdict[gb.highlightLineNum]['name'])
 
    restorescreen()
 
