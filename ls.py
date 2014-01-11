@@ -1,6 +1,4 @@
-from __future__ import print_function  
-
-import curses, os, sys, traceback, stat, time, datetime, logging, errno, shutil
+import curses, os, sys, traceback, stat, time, datetime, logging, errno, shutil, math
 from globals import *
 from stat import *
 from pwd import getpwuid
@@ -21,8 +19,6 @@ def preparelist():
    for ln in prep:
       # get and store file info
       line = getstatinfo(ln)
-      # remove EOLN if it is still there
-      if ln[-1] == '\n': ln = ln[:-1]
 
       s = os.lstat(ln)
 
@@ -97,7 +93,8 @@ def printrow(dictline, format):
 # and formatting (color, bold etc.)
 def printcol(wincol, dictline, colname, lineformat, displayoption):
    if displayoption:
-      gb.scrn.addstr(gb.winrow, wincol, dictline[colname], lineformat)
+      if wincol < gb.scrn.getmaxyx()[1] - 1:
+         gb.scrn.addstr(gb.winrow, wincol, dictline[colname][0:gb.scrn.getmaxyx()[1]-wincol], lineformat)
 
 # get length of widest column
 def colwidth(colname, isOn):
@@ -110,27 +107,47 @@ def colwidth(colname, isOn):
       length += 2
    return length
 
+# set column widths based on widest item in a column
+def setcolpositions():
+   #round up to nearest 10 in case the column is wider
+   if colwidth('name', True) > gb.namewidth:
+      gb.namewidth = int(math.ceil(colwidth('name', True) / 10.0)) * 10
+
+   gb.permscol = gb.namewidth
+   gb.uidcol = gb.permscol + colwidth('permissions', gb.protbits)
+   gb.gidcol = gb.uidcol + colwidth('uid', gb.owner)
+   gb.sizecol = gb.gidcol + colwidth('gid', gb.group)
+   gb.modDatecol = gb.sizecol + colwidth('size', gb.size)
+   gb.modTimecol = gb.modDatecol + colwidth('modDate', gb.lastModDate)
+
+# display directory contents
 def displaydir()  :
    # clear screen
-   gb.scrn.erase()
-   gb.scrn.addstr(curses.LINES - 1, 90, str(gb.highlightLineNum))
-   gb.scrn.addstr(curses.LINES - 1, 95, str(gb.index))
-   # now paint the rows
-   top = gb.startrow + 1
-   bottom = gb.startrow+curses.LINES
+   gb.scrn.clear()
 
    gb.winrow = 0
 
+   # now paint the rows
+   # headings first
    printrow(gb.cmdoutdict[0], (gb.purple | curses.A_BOLD))
    gb.winrow += 1
 
+   # set top and bottom index
+   # omit headings from top 
+   top = gb.startrow + 1
+   bottom = gb.startrow+gb.scrn.getmaxyx()[0]-1
+
+   #gb.scrn.addstr(curses.LINES - 1, 0, "startrow: " + str(gb.startrow))
+   #gb.scrn.addstr(curses.LINES - 1, 12, "now on: " + str(gb.startrow+gb.highlightLineNum))
+
+   # now dir contents (if any)
    if len(gb.cmdoutdict) > 1:
+      # adjust highlighted line index 
       if ( gb.highlightLineNum >= len(gb.cmdoutdict) ):
          gb.highlightLineNum = len(gb.cmdoutdict) - 1
-         gb.index = gb.highlightLineNum
 
       for line in gb.cmdoutdict[top:bottom]:
-         # highlight current line
+         # set colours and highlighting
          color = gb.green if isdir(line['name']) else gb.white
          format = curses.A_NORMAL if gb.winrow != gb.highlightLineNum else curses.A_BOLD
 
@@ -139,46 +156,97 @@ def displaydir()  :
 
    gb.scrn.refresh()
 
-def updown(inc):
+
+# move cursor up or down
+def updownpaging(inc):
    nextLineNum = gb.highlightLineNum + inc
    # paging
    if inc == gb.UP and gb.highlightLineNum == 1 and gb.startrow != 0:
       gb.startrow += gb.UP
       return
-   elif inc == gb.DOWN and nextLineNum == curses.LINES and (gb.startrow+curses.LINES) != len(gb.cmdoutdict):
+   elif inc == gb.DOWN and nextLineNum == gb.scrn.getmaxyx()[0]-1 and (gb.startrow+gb.scrn.getmaxyx()[0]-1) != len(gb.cmdoutdict):
       gb.startrow += gb.DOWN
       return
 
    # scroll highlight line
    if inc == gb.UP and (gb.startrow != 0 or gb.highlightLineNum != 1):
       gb.highlightLineNum = nextLineNum
-   elif inc == gb.DOWN and (gb.startrow+gb.highlightLineNum+1) != len(gb.cmdoutdict) and gb.highlightLineNum != curses.LINES:
+   elif inc == gb.DOWN and (gb.startrow+gb.highlightLineNum) != len(gb.cmdoutdict)-1 and gb.highlightLineNum != gb.scrn.getmaxyx()[0]-1:
       gb.highlightLineNum = nextLineNum
+
+
+# move highlight up/down one line
+def updown(inc):
+   tmp = gb.highlightLineNum + inc
+
+   # ignore attempts to go off the edge of the screen
+   if 0 < tmp < len(gb.cmdoutdict)-gb.startrow: 
+      # unhighlight the current line by rewriting it in default attributes
+      tmprow = gb.cmdoutdict[gb.highlightLineNum + gb.startrow]   
+
+      color = gb.green if isdir(tmprow['name']) else gb.white
+      gb.winrow = gb.highlightLineNum
+      printrow(tmprow, color)
+
+      # highlight the previous/next line
+      gb.winrow = tmp
+
+      ln = gb.cmdoutdict[gb.highlightLineNum + gb.startrow + inc]
+      highlightcolor = gb.green if isdir(ln['name']) else gb.white
+      printrow(ln, (highlightcolor | curses.A_BOLD))
+      
+      gb.highlightLineNum += inc
+
+      gb.scrn.refresh()
+
+# go to next page of dir contents
+def nextpage():
+   diff = len(gb.cmdoutdict) - len(gb.cmdoutdict[0:gb.startrow+curses.LINES-1])
+
+   if diff > 0: 
+      gb.startrow += curses.LINES - 2
+
+      if gb.highlightLineNum > len(gb.cmdoutdict[gb.startrow:-1]):
+         gb.highlightLineNum = len(gb.cmdoutdict[gb.startrow:-1])
+
+# go to previous page of dir contents
+def prevpage():
+   if gb.startrow > 0:
+
+      if gb.startrow - gb.winrow > 0:
+         gb.startrow -= curses.LINES - 2
+      else:
+         gb.startrow = 0
 
 # check if the item on current line is a directory
 # return true or false
 def isdir(name):
    return S_ISDIR(os.stat(name).st_mode)
 
+# change directory
 def cd(name):
    try:
       gb.scrn.refresh()
-      #index = gb.highlightLineNum if gb.highlightLineNum != 0 else 1
       os.chdir(name)
+      gb.startrow = 0
       rerun()
    except OSError as e:
-      curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
-      gb.scrn.addstr(curses.LINES - 1, 0, "Error: " + format(e.strerror), curses.color_pair(1) | curses.A_BOLD)
+      printerror(e)
 
-def mkdir(dirname):
+# make directory
+def mkdir():
+   curses.echo()
+   gb.scrn.addstr(curses.LINES - 1, 0, "Type in directory name you wish to create: ")
+   dirname = gb.scrn.getstr(curses.LINES - 1, 43)
    try:
       gb.scrn.refresh()
       os.mkdir(dirname)
       rerun()
    except OSError as e:
-      curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
-      gb.scrn.addstr(curses.LINES - 1, 0, "Error: " + format(e.strerror), curses.color_pair(1) | curses.A_BOLD)
+      printerror(e)
+   curses.noecho()
 
+# remove file or directory
 def removeItem(name):
    try:
       if(isdir(name)):
@@ -197,38 +265,46 @@ def removeItem(name):
          
          rerun()
       else:
-         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
-         gb.scrn.addstr(curses.LINES - 1, 0, "Error: " + format(e.strerror), curses.color_pair(1) | curses.A_BOLD)
+         printerror(e)
+      
+
+def rename(source, destination):
+   try:
+      os.rename(source, destination)
+      rerun()
+   except OSError as e:
+      printerror(e)
+
+def printerror(e):
+   displaydir()
+   gb.scrn.addstr(curses.LINES - 1, 0, "Error: " + format(e.strerror) + \
+      ". Press any key to continue.", curses.color_pair(1) | curses.A_BOLD)
+   restorescreen()
+   gb.scrn.getch()
 
 # initlialise colours that will be used in the program
 def initialisecolours():
    background = curses.COLOR_BLACK
    # color pairs for display
+   # red for errors
+   curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
    # green for dirs
    curses.init_pair(2, curses.COLOR_GREEN, background)
    # white for files
    curses.init_pair(3, curses.COLOR_WHITE, background)
    # purple for headings
    curses.init_pair(4, curses.COLOR_MAGENTA, background)
-   # blue for background
-   curses.init_pair(5, curses.COLOR_WHITE, background)
    # set colour pairs for dirs (green) and regular files (white)
+   gb.scrn.bkgd(' ', curses.color_pair(3))
+
    gb.green = curses.color_pair(2)
    gb.white = curses.color_pair(3)
    gb.purple = curses.color_pair(4)
 
-def setcolswidths():
-   gb.permscol = colwidth('name', True)
-   gb.uidcol = colwidth('name', True) + colwidth('permissions', gb.protbits)
-   gb.gidcol = colwidth('name', True) + colwidth('permissions', gb.protbits) + colwidth('uid', gb.owner)
-   gb.sizecol = colwidth('name', True) + colwidth('permissions', gb.protbits) + colwidth('uid', gb.owner) + colwidth('gid', gb.group)
-   gb.modDatecol = colwidth('name', True) + colwidth('permissions', gb.protbits) + colwidth('uid', gb.owner) + colwidth('gid', gb.group) + colwidth('size', gb.size)
-   gb.modTimecol = colwidth('name', True) + colwidth('permissions', gb.protbits) + colwidth('uid', gb.owner) + colwidth('gid', gb.group) + colwidth('size', gb.size) + colwidth('modDate', gb.lastModDate)
-
 # run/re-run the displaying of dir contents
 def rerun():
    gb.ls = preparelist()
-   setcolswidths()
+   setcolpositions()
    displaydir()
 
 def main():
@@ -240,43 +316,78 @@ def main():
    gb.scrn.keypad(1)
    curses.curs_set(0)
 
-   gb.scrn.bkgd(' ', curses.color_pair(5))
    initialisecolours()
    initialisedisplayoptions()
    
    gb.highlightLineNum = 1
-   gb.index = 1;
    gb.startrow = 0
 
+   #default length of first column
+   gb.namewidth = 20
+
    preparelist()
-   setcolswidths()
+   setcolpositions()
+
+   displaydir()
 
    # user command loop
    while True:
-      displaydir()
+      current = gb.startrow+gb.highlightLineNum
+
+      gb.scrn.addstr(gb.scrn.getmaxyx()[0] - 1, 12, str(gb.highlightLineNum))
+
       # get user command
       c = gb.scrn.getch()
 
+      #quit
       if c == ord("q"): break
+      # check for screen resize
+      elif c == curses.KEY_RESIZE:
+         curses.endwin()
+         # reset highlighted line
+         if gb.highlightLineNum >= gb.scrn.getmaxyx()[0]:
+            gb.highlightLineNum = gb.scrn.getmaxyx()[0]-2
+         displaydir()
       # move up/down
-      elif c == curses.KEY_UP: updown(gb.UP)
-      elif c == curses.KEY_DOWN: updown(gb.DOWN)
+      elif c == curses.KEY_UP: 
+         if ( gb.highlightLineNum == 1 ):
+            updownpaging(gb.UP)
+            displaydir()
+         else: 
+            updown(gb.UP)
+      elif c == curses.KEY_DOWN: 
+         if ( gb.highlightLineNum == gb.scrn.getmaxyx()[0]-2):
+            updownpaging(gb.DOWN)
+            displaydir()
+         else:
+            updown(gb.DOWN)   
+      # go to previous/next 'page' of files
+      elif c == curses.KEY_PPAGE: prevpage()
+      elif c == curses.KEY_NPAGE: nextpage()
+      # refresh
+      elif c == ord("r"): displaydir()
       # display options
+      # permissions
       elif c == ord("p"):
          gb.protbits = not gb.protbits
          rerun()
+      # owner
       elif c == ord("o"):
          gb.owner = not gb.owner
          rerun()
+      # group
       elif c == ord("g"):
          gb.group = not gb.group
          rerun()
+      # size
       elif c == ord("s"):
          gb.size = not gb.size
          rerun()
+      # date
       elif c == ord("d"):
          gb.lastModDate = not gb.lastModDate
          rerun()
+      # time
       elif c == ord("t"):
          gb.lastModTime = not gb.lastModTime
          rerun()
@@ -284,17 +395,26 @@ def main():
       elif c == ord("+"):
          initialisedisplayoptions()
          rerun()
+      # change directory
       elif c == ord("\n"):
-         cd(gb.cmdoutdict[gb.highlightLineNum]['name'])
+      #elif c == curses.KEY_RIGHT:
+         cd(gb.cmdoutdict[current]['name'])
+      # go up a directory
       elif c == curses.KEY_BACKSPACE:
          cd('..')
+      # make new directory
+      elif c == ord("n"):
+         mkdir()
+      # delete file/directory
+      elif c == curses.KEY_DC:
+         removeItem(gb.cmdoutdict[current]['name'])
+      # rename/move
       elif c == ord("m"):
          curses.echo()
-         dirname = gb.scrn.getstr(curses.LINES - 1, 0)
-         mkdir(dirname)
+         gb.scrn.addstr(curses.LINES - 1, 0, "Type in desired destination: ")
+         destination = gb.scrn.getstr(curses.LINES - 1, 29)
+         rename(gb.cmdoutdict[current]['name'], destination)
          curses.noecho()
-      elif c == ord("r"):
-         removeItem(gb.cmdoutdict[gb.highlightLineNum]['name'])
 
    restorescreen()
 

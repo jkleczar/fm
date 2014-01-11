@@ -10,3 +10,4 @@ class gb:
    highlightLineNum = None
    UP = -1
    DOWN = 1
+   namewidth = None
