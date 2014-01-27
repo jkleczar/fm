@@ -4,10 +4,19 @@ import curses, os, sys, traceback
 class gb:
    scrn = None  # will point to Curses window object
    cmdoutdict = [] # output of listdir as a dictionary 
-   winrow = None  # current row position in screen
+   winrow = None  
    startrow = None  # index of first row in cmdoutlines to be displayed
-   index = None
+   HEIGHT = None
    highlightLineNum = None
    UP = -1
    DOWN = 1
    namewidth = None
+   COMMENT_CHAR = '#'
+   OPTION_CHAR =  '='
+   SPLIT_CHAR =  '|'
+   PROG_PATH = None
+   CONF_PATH = '/fm.conf'
+   DEFLIST_PATH = None
+   DEFAULT_TYPES = None
+   CUSTOM_DEFAULTS = None
+   default_text = 'gedit '
