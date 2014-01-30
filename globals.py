@@ -1,4 +1,4 @@
-import curses, os, sys, traceback
+import os, traceback
 
 # global variables
 class gb:
@@ -14,9 +14,9 @@ class gb:
    COMMENT_CHAR = '#'
    OPTION_CHAR =  '='
    SPLIT_CHAR =  '|'
-   PROG_PATH = None
-   CONF_PATH = '/fm.conf'
+   CONF_PATH = os.environ['FMRC']
    DEFLIST_PATH = None
    DEFAULT_TYPES = None
    CUSTOM_DEFAULTS = None
    default_text = 'gedit '
+   dotfiles = False
