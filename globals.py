@@ -20,3 +20,4 @@ class gb:
    CUSTOM_DEFAULTS = None
    default_text = 'gedit '
    dotfiles = False
+   BINPATH = '/tmp/FM'

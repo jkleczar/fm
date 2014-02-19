@@ -1,9 +1,115 @@
 import curses, os, sys, re, shutil, stat, time, datetime, \
-       errno, math, mimetypes
+       errno, math, mimetypes, distutils.dir_util
 from globals import *
 from stat import *
 from pwd import getpwuid
 from grp import getgrgid
+
+# set global variables
+def setglobals():
+   gb.highlightLineNum = 1
+   gb.startrow = 0
+   gb.HEIGHT = gb.scrn.getmaxyx()[0]
+   gb.namewidth = 20
+
+   configparsed = parse_config(gb.CONF_PATH, gb.COMMENT_CHAR, gb.OPTION_CHAR)
+   # extract mimeapps.list and default.list paths from configuration file
+   mimeappslist = configparsed.pop('MIMEAPPSLIST') if 'MIMEAPPSLIST' in configparsed else ''
+   defaultslist = configparsed.pop('DEFLIST') if 'DEFLIST' in configparsed else ''
+
+   gb.DEFLIST_PATH = mimeappslist if os.path.exists(mimeappslist) else defaultslist \
+                                     if os.path.exists(defaultslist) else ''
+   # the rest are custom default programs
+   gb.CUSTOM_DEFAULTS = configparsed
+   # set default text opener in case other default programs are unset
+   if 'default' in gb.CUSTOM_DEFAULTS:
+      gb.default_text_prog = gb.CUSTOM_DEFAULTS['default']
+
+   gb.DEFAULT_TYPES =  getdefaulttypes()
+
+# parse a config file of format 
+# option = value
+# skip commented lines 
+# return dictionary of options and values
+def parse_config(conffile, commentchar, optionchar):
+   options = {}
+   f = open(str(conffile))
+   for line in f:
+      # First, remove comments:
+      if commentchar in line:
+         # split on comment char, keep only the part before
+         line = line.split(commentchar, 1)[0]
+      # Second, find lines with an option=value:
+      if gb.OPTION_CHAR in line:
+         # split on option char:
+         option, value = line.split(optionchar, 1)
+         # strip spaces:
+         option = option.strip()
+         value = value.strip()
+         # store in dictionary:
+         options[option] = value
+   f.close()
+
+   return options
+
+# get a dictionary of mime types as keys and programs to open then with as values
+def getdefaulttypes():
+   mimetypes = {}
+   if gb.DEFLIST_PATH != '':
+      mimetypes = parse_config(gb.DEFLIST_PATH, '[', gb.OPTION_CHAR)
+
+      for mime in mimetypes:
+         mimetypes[mime] = mimetypes[mime].split(';')[0] if ';' in mimetypes[mime] else mimetypes[mime]
+         mimetypes[mime] = mimetypes[mime].replace('.desktop', '')
+         mimetypes[mime] = mimetypes[mime].strip()
+
+   return mimetypes
+
+# set all display options to default values
+def initialisedisplayoptions():
+   gb.protbits = True
+   gb.owner = True
+   gb.group = True
+   gb.size = True
+   gb.lastModDate = True
+   gb.lastModTime = True
+
+# initlialise colours that will be used in the program
+def initialisecolours():
+   background = curses.COLOR_BLACK
+   # color pairs for display
+   # red for errors
+   curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
+   # green for dirs
+   curses.init_pair(2, curses.COLOR_GREEN, background)
+   # white for files
+   curses.init_pair(3, curses.COLOR_WHITE, background)
+   # purple for headings
+   curses.init_pair(4, curses.COLOR_MAGENTA, background)
+   # set colour pairs for dirs (green) and regular files (white)
+   gb.scrn.bkgd(' ', curses.color_pair(3))
+
+   gb.green = curses.color_pair(2)
+   gb.white = curses.color_pair(3)
+   gb.purple = curses.color_pair(4)
+
+# set column widths based on widest item in a column
+def setcolpositions():
+   #round up to nearest 10 in case the column is wider
+   if colwidth('name', True) > gb.namewidth:
+      gb.namewidth = int(math.ceil(colwidth('name', True) / 10.0)) * 10
+
+   gb.permscol = gb.namewidth
+   gb.uidcol = gb.permscol + colwidth('permissions', gb.protbits)
+   gb.gidcol = gb.uidcol + colwidth('uid', gb.owner)
+   gb.sizecol = gb.gidcol + colwidth('gid', gb.group)
+   gb.modDatecol = gb.sizecol + colwidth('size', gb.size)
+   gb.modTimecol = gb.modDatecol + colwidth('modDate', gb.lastModDate)
+
+# check if the item on current line is a directory
+# return true or false
+def isdir(name):
+   return S_ISDIR(os.stat(name).st_mode)
 
 # get all items in current directory
 # store the files and their stat info
@@ -74,15 +180,6 @@ def formatpermissions(itemname):
 
    return isdir + irusr + iwusr + ixusr + irgrp + iwgrp + ixgrp + iroth + iwoth + ixoth
 
-# set all display options to default values
-def initialisedisplayoptions():
-   gb.protbits = True
-   gb.owner = True
-   gb.group = True
-   gb.size = True
-   gb.lastModDate = True
-   gb.lastModTime = True
-
 # print a single row
 
 def printrow(dictline, format):
@@ -116,96 +213,173 @@ def colwidth(colname, isOn):
       length += 2
    return length
 
-# set column widths based on widest item in a column
-def setcolpositions():
-   #round up to nearest 10 in case the column is wider
-   if colwidth('name', True) > gb.namewidth:
-      gb.namewidth = int(math.ceil(colwidth('name', True) / 10.0)) * 10
-
-   gb.permscol = gb.namewidth
-   gb.uidcol = gb.permscol + colwidth('permissions', gb.protbits)
-   gb.gidcol = gb.uidcol + colwidth('uid', gb.owner)
-   gb.sizecol = gb.gidcol + colwidth('gid', gb.group)
-   gb.modDatecol = gb.sizecol + colwidth('size', gb.size)
-   gb.modTimecol = gb.modDatecol + colwidth('modDate', gb.lastModDate)
-
-# display directory contents
-def displaydir()  :
-   # clear screen
+# display list of files on screen
+def displayscreencontent(fileList):
    gb.scrn.clear()
-
+   curses.endwin()
+   
    gb.winrow = 0
+   top = gb.startrow + 1
+   bottom = gb.startrow + gb.HEIGHT - 1
 
-   # now paint the rows
-   # headings first
-   printrow(gb.cmdoutdict[0], (gb.purple | curses.A_BOLD))
+   if isinstance(fileList[0], dict):
+      printrow(gb.cmdoutdict[0], (gb.purple | curses.A_BOLD))
+   else:
+      gb.scrn.addstr(0, 0, fileList[0])
+
    gb.winrow += 1
 
-   # set top and bottom index
-   # omit headings from top 
-   top = gb.startrow + 1
-   bottom = gb.startrow + gb.HEIGHT-1
-
-   # now dir contents (if any)
-   if len(gb.cmdoutdict) > 1:
+   if len(fileList) > 1:
       # adjust highlighted line index 
-      if ( gb.highlightLineNum >= len(gb.cmdoutdict) ):
-         gb.highlightLineNum = len(gb.cmdoutdict) - 1
+      if ( gb.highlightLineNum >= len(fileList) ):
+         gb.highlightLineNum = len(fileList) - 1
 
-      for line in gb.cmdoutdict[top:bottom]:
-         # set colours and highlighting
-         color = gb.green if isdir(line['name']) else gb.white
-         format = curses.A_NORMAL if gb.winrow != gb.highlightLineNum else curses.A_BOLD
+      if isinstance(fileList[0], dict):
+         for line in fileList[top:bottom]:
+            # set colours and highlighting
+            color = gb.green if isdir(line['name']) else gb.white
+            format = curses.A_NORMAL if gb.winrow != gb.highlightLineNum else curses.A_BOLD
 
-         printrow(line, color | format)
-         gb.winrow += 1
+            printrow(line, color | format)
+            gb.winrow += 1
+      else:
+         for f in fileList[top:bottom]:
+            format = curses.A_NORMAL if gb.winrow != gb.highlightLineNum else curses.A_BOLD
+            gb.scrn.addstr(gb.winrow, 0, f, format)
+            gb.winrow+=1
    else:
       gb.highlightLineNum = 0
+
    gb.scrn.refresh()
 
-# move highlight up/down one line within files visible on screen
-def updownonscreen(inc):
-   tmp = gb.highlightLineNum + inc
-
-   # ignore attempts to go off the edge of the screen
-   if 0 < tmp < len(gb.cmdoutdict)-gb.startrow: 
-      # unhighlight the current line by rewriting it in default attributes
-      tmprow = gb.cmdoutdict[gb.highlightLineNum + gb.startrow]   
-
-      color = gb.green if isdir(tmprow['name']) else gb.white
-      gb.winrow = gb.highlightLineNum
-      printrow(tmprow, color)
-
-      # highlight the previous/next line
-      gb.winrow = tmp
-
-      ln = gb.cmdoutdict[gb.highlightLineNum + gb.startrow + inc]
-      highlightcolor = gb.green if isdir(ln['name']) else gb.white
-      printrow(ln, (highlightcolor | curses.A_BOLD))
-      
-      gb.highlightLineNum += inc
-
-      gb.scrn.refresh()
+# move highlight up/down
+def updown(inc, fileList):
+   if ( (gb.highlightLineNum == 1 and inc == gb.UP ) or 
+         gb.highlightLineNum == gb.HEIGHT-2 and inc == gb.DOWN ):
+      updownpaging(inc, fileList)
+      displayscreencontent(fileList)
+   else:
+      updownonscreen(inc, fileList)
 
 # scroll highlight up/down from the edge of screen 
-def updownpaging(inc):
+def updownpaging(inc, fileList):
    nextLineNum = gb.highlightLineNum + inc
    if inc == gb.UP and gb.highlightLineNum == 1 and gb.startrow != 0:
       gb.startrow += gb.UP
       return
-   elif inc == gb.DOWN and nextLineNum == gb.HEIGHT-1 and (gb.startrow + gb.HEIGHT-1) != len(gb.cmdoutdict):
+   elif inc == gb.DOWN and nextLineNum == gb.HEIGHT-1 and (gb.startrow + gb.HEIGHT-1) != len(fileList):
       gb.startrow += gb.DOWN
       return
 
-# move highlight up/down
-def updown(inc):
-   gb.scrn.addstr(gb.HEIGHT - 1, 3, str(gb.highlightLineNum))
-   if ( (gb.highlightLineNum == 1 and inc == gb.UP ) or 
-         gb.highlightLineNum == gb.HEIGHT-2 and inc == gb.DOWN ):
-      updownpaging(inc)
-      displaydir()
-   else:
-      updownonscreen(inc)
+# move highlight up/down one line within files visible on screen
+def updownonscreen(inc, filesList):
+   tmp = gb.highlightLineNum + inc
+
+   # ignore attempts to go off the edge of the screen
+   if 0 < tmp < len(filesList)-gb.startrow: 
+      tmprow = filesList[gb.highlightLineNum + gb.startrow]
+      highlightedline = filesList[gb.highlightLineNum + gb.startrow + inc]
+
+      if isinstance(tmprow, dict):
+         color = gb.green if isdir(tmprow['name']) else gb.white
+         gb.winrow = gb.highlightLineNum
+         printrow(tmprow, color)
+         gb.winrow = tmp
+         highlightcolor = gb.green if isdir(highlightedline['name']) else gb.white
+         printrow(highlightedline, (highlightcolor | curses.A_BOLD))
+      else:
+         gb.scrn.addstr(gb.highlightLineNum, 0, tmprow)
+         gb.scrn.addstr(tmp, 0, highlightedline, curses.A_BOLD)
+      
+      gb.highlightLineNum += inc
+      gb.scrn.refresh()
+
+# get stat info of a file/dir
+# return dictionary of file stat info
+def getstatinfo(ln):
+   statinfo = os.stat(ln)
+   protbits = formatpermissions(ln)
+   uid = getpwuid(statinfo.st_uid).pw_name
+   gid = getgrgid(statinfo.st_gid).gr_name
+   size = str(statinfo.st_size)
+   mtime = datetime.datetime.strptime(time.ctime(statinfo.st_mtime), "%a %b %d %H:%M:%S %Y")
+   modDate = mtime.strftime("%b %d")
+   modTime = mtime.strftime("%H:%M")
+
+   line = {'name': ln, 'permissions': protbits, 'uid': uid, 'gid': gid, 
+           'size': size, 'modDate': modDate, 'modTime': modTime}
+
+   return line
+
+# format file/dir permissions from stat module to rwx format.
+# return formatted permissions
+def formatpermissions(itemname):
+   statinfo = os.stat(itemname)
+   mode = statinfo.st_mode
+
+   isdir = 'd' if S_ISDIR(mode) else '-'
+   irusr = 'r' if stat.S_IRUSR & mode else '-'
+   iwusr = 'w' if stat.S_IWUSR & mode else '-'
+   ixusr = 'x' if stat.S_IXUSR & mode else '-'
+   irgrp = 'r' if stat.S_IRGRP & mode else '-'
+   iwgrp = 'w' if stat.S_IWGRP & mode else '-'
+   ixgrp = 'x' if stat.S_IXGRP & mode else '-'
+   iroth = 'r' if stat.S_IROTH & mode else '-'
+   iwoth = 'w' if stat.S_IWOTH & mode else '-'
+   ixoth = 'x' if stat.S_IXOTH & mode else '-'
+
+   return isdir + irusr + iwusr + ixusr + irgrp + iwgrp + ixgrp + iroth + iwoth + ixoth
+
+# print a single row
+def printrow(dictline, format):
+   gb.wincol = 0;
+   printcol(gb.wincol, dictline, 'name', format, True, False)
+   printcol(gb.permscol, dictline, 'permissions', format, gb.protbits, False)
+   printcol(gb.uidcol, dictline, 'uid', format, gb.owner, False)
+   printcol(gb.gidcol, dictline, 'gid', format, gb.group, False)
+   printcol(gb.sizecol, dictline, 'size', format, gb.size, True)
+   printcol(gb.modDatecol, dictline, 'modDate', format, gb.lastModDate, False)
+   printcol(gb.modTimecol, dictline, 'modTime', format, gb.lastModTime, False)
+
+# print line based on row, col no
+# and formatting (color, bold etc.)
+def printcol(wincol, dictline, colname, lineformat, displayoption, justified):
+   if displayoption and wincol < gb.scrn.getmaxyx()[1] - 1:
+      line = dictline[colname][0:gb.scrn.getmaxyx()[1]-wincol]
+      if justified:
+         gb.scrn.addstr(gb.winrow, wincol-2, line.rjust(colwidth(colname, True)), lineformat)
+      else:
+         gb.scrn.addstr(gb.winrow, wincol, line, lineformat)
+
+# get length of widest column
+def colwidth(colname, isOn):
+   length = 0
+
+   if isOn:
+      for ln in gb.cmdoutdict:
+         if len(ln[colname]) > length:
+            length = len(ln[colname])
+      length += 2
+   return length
+
+# handle the screen in case it gets resized
+def resize():
+   curses.endwin()
+   gb.HEIGHT = gb.scrn.getmaxyx()[0]
+   # reset highlighted line
+   if gb.highlightLineNum >= gb.HEIGHT:
+      gb.highlightLineNum = gb.HEIGHT-2
+
+# go to previous page of dir contents
+def prevpage():
+   if gb.startrow > 0:
+      if gb.startrow - gb.winrow > 0:
+         gb.startrow -= gb.HEIGHT - 2
+      else:
+         gb.startrow = 0
+
+      gb.highlightLineNum = 1
+      displayscreencontent(gb.cmdoutdict)
 
 # go to next page of dir contents
 def nextpage():
@@ -214,26 +388,68 @@ def nextpage():
    if diff > 0: 
       gb.startrow += gb.HEIGHT - 2
       gb.highlightLineNum = 1
+      displayscreencontent(gb.cmdoutdict)
 
-      displaydir()
+# return current list of deleted files in recycle bin
+def getDeletedFiles():
+   fileList = []
+   fileList.append("Files to retrieve")
+   rootdir = gb.BINPATH
 
-# go to previous page of dir contents
-def prevpage():
-   if gb.startrow > 0:
+   for root, subFolders, files in os.walk(rootdir):
+      for f in files:
+         fileList.append(os.path.join(root, f))
 
-      if gb.startrow - gb.winrow > 0:
-         gb.startrow -= gb.HEIGHT - 2
-      else:
-         gb.startrow = 0
+   return fileList
 
+# retrieve a file from recycle bin
+def retrieveFile(fileList):
+   try:
+      originalPath = fileList[gb.highlightLineNum].replace(gb.BINPATH, '/')
+
+      if not os.path.exists(os.path.dirname(originalPath)):
+         os.makedirs(os.path.dirname(originalPath))
+
+      os.rename(fileList[gb.highlightLineNum], originalPath)
+      return getDeletedFiles()
+   except OSError as e:
+      printerror(e)
+
+# retrieve deleted files
+def retrieveDeletes():
+   fileList = getDeletedFiles()
+
+   if len(fileList) > 1:
+      gb.startrow = 0
       gb.highlightLineNum = 1
 
-      displaydir()
+      displayscreencontent(fileList)
 
-# check if the item on current line is a directory
-# return true or false
-def isdir(name):
-   return S_ISDIR(os.stat(name).st_mode)
+      while True:
+         c = gb.scrn.getch()
+
+         if c == ord("q"): 
+            gb.highlightLineNum = 1
+            rerun()
+            break
+         elif c == curses.KEY_UP: updown(gb.UP, fileList)
+         elif c == curses.KEY_DOWN: updown(gb.DOWN, fileList)
+         elif c == ord("\n"):
+            fileList = retrieveFile(fileList)
+            if len(fileList) > 1:
+               displayscreencontent(fileList)
+            else:
+               gb.highlightLineNum = 1
+               gb.scrn.clear()
+               curses.endwin()
+               rerun()
+               break
+   else:
+      gb.scrn.clear()
+      curses.endwin()
+      gb.scrn.addstr(0, 0, "No files to retrieve. Press any key to continue.")
+      gb.scrn.getch()
+      rerun()
 
 # change directory
 def cd(name):
@@ -244,7 +460,6 @@ def cd(name):
       gb.scrn.refresh()
       os.chdir(name)
       gb.startrow = 0
-      rerun()
    except OSError as e:
       printerror(format(e.strerror))
 
@@ -258,46 +473,42 @@ def mkdir():
       os.mkdir(dirname)
       if len(gb.cmdoutdict) == 1:
          gb.highlightLineNum = 1
-      rerun()
    except OSError as e:
       printerror(format(e.strerror))
    curses.noecho()
 
-# remove file or directory
+# remove a file or directory
+# put it in a temporary bin file 
 def removeItem(name):
+   binpath = gb.BINPATH + os.getcwd()
    try:
-      if gb.highlightLineNum == gb.HEIGHT-2:
-         gb.highlightLineNum -= 1
-
-      if(isdir(name)):
-         os.rmdir(name)
-      else:
-         os.remove(name)
-      rerun()
-   except OSError as e:
-      if e.errno == errno.ENOTEMPTY:
-         gb.scrn.addstr(gb.HEIGHT - 1, 0,
-                        "Error: Directory not empty. Are you sure you want to remove it with all its contents? y/n",
-                        curses.color_pair(1) | curses.A_BOLD)
-
-         if gb.scrn.getch() == ord("y"):
-            shutil.rmtree(name)  
-         rerun() 
-      else:
-         printerror(e)
+      if not os.path.exists(binpath):
+         os.makedirs(binpath)
       
+      if isdir(name):
+         if os.listdir(name): # dir not empty
+            distutils.dir_util.copy_tree(name, binpath + '/' + name)
+            shutil.rmtree(name)
+         else:
+            os.mkdir(binpath + '/' + name)
+            os.rmdir(name)
+      else:
+         os.rename(name, binpath + '/' + name)   
+   except OSError as e:
+      printerror(e)
 
+# rename file
 def rename(source):
    curses.echo()
    gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in desired destination: ")
    destination = gb.scrn.getstr(gb.HEIGHT - 1, 29)
    try:
       os.rename(source, destination)
-      rerun()
    except OSError as e:
       printerror(e)
    curses.noecho()
 
+# copy file/dir
 def copy(source):
    curses.echo()
    gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in desired destination: ")
@@ -308,9 +519,69 @@ def copy(source):
       else:
          #copy and sest permissions according to umask
          shutil.copyfile(source, destination)
-      rerun()
    except (IOError, os.error) as e:
       printerror(e)
+
+# change file permissions
+def chmod(current):
+   curses.echo()
+   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in permissions in decimal format: ")
+   perms = gb.scrn.getstr(gb.HEIGHT - 1, 39)
+
+   try:
+      os.chmod(current, int(perms, 8))  
+   except ValueError as e:
+      printerror(e)
+
+# open help window
+def help():
+   gb.scrn.clear()
+   curses.endwin()
+
+   options = [ { "PG UP" : "-- jump to prev page" } , 
+               { "PG DOWN" : "-- jump to next page" },
+               { "ENTER" : "-- change directory/open file" },
+               { "BACKSPACE" : "-- go up a directory" },
+               { "DELETE" : "-- delete file/directory" },
+               { "Q" : "-- quit"},
+               { "N" : "-- make directory" },
+               { "M" : "-- rename file/directory" },
+               { "C" : "-- copy file/directory" },
+               { "X" : "-- change permissions (chmod)" },
+               { "H" : "-- this help window" },
+               { "R" : "-- retrieve deleted files"},
+               { "P" : "-- toggle PERMISSIONS column" },
+               { "O" : "-- toggle OWNER column" },
+               { "G" : "-- toggle GROUP column" },
+               { "S" : "-- toggle SIZE column" },
+               { "D" : "-- toggle DATE column" },
+               { "T" : "-- toggle TIME column" },
+               { "+" : "-- turn on all columns" },
+               { "." : "-- toggle view of dot files/directories"}
+             ]
+
+   WIDTH = gb.scrn.getmaxyx()[1]
+
+   if WIDTH > len('FM HELP'):
+      gb.scrn.addstr(0, WIDTH // 2 - 4, 'FM HELP', curses.color_pair(2) | curses.A_BOLD)
+      row = 1
+      for option in options:
+         if row < gb.HEIGHT and WIDTH > 10:
+            for key in option:
+               gb.scrn.addstr(row, 0, key, curses.A_BOLD)
+               gb.scrn.addstr(row, 10, option[key[0:WIDTH-11]])
+            row+=1
+
+   if gb.scrn.getch() == curses.KEY_RESIZE: 
+      resize()
+      help()
+   else:
+      rerun()
+
+# toggle dotfiles on/off
+def toggledotfiles():
+   gb.dotfiles = not gb.dotfiles
+   gb.startrow = 0
 
 # open current file 
 def openfile(current):
@@ -336,270 +607,106 @@ def openfile(current):
    
    os.system(executeline)
 
-# parse a config file of format 
-# option = value
-# skip commented lines 
-# return dictionary of options and values
-def parse_config(conffile, commentchar, optionchar):
-   options = {}
-   f = open(str(conffile))
-   for line in f:
-      # First, remove comments:
-      if commentchar in line:
-         # split on comment char, keep only the part before
-         line = line.split(commentchar, 1)[0]
-      # Second, find lines with an option=value:
-      if gb.OPTION_CHAR in line:
-         # split on option char:
-         option, value = line.split(optionchar, 1)
-         # strip spaces:
-         option = option.strip()
-         value = value.strip()
-         # store in dictionary:
-         options[option] = value
-   f.close()
-
-   return options
-
-# get a dictionary of mime types as keys and programs to open then with as values
-def getdefaulttypes():
-   mimetypes = {}
-   if gb.DEFLIST_PATH != '':
-      mimetypes = parse_config(gb.DEFLIST_PATH, '[', gb.OPTION_CHAR)
-
-      for mime in mimetypes:
-         mimetypes[mime] = mimetypes[mime].split(';')[0] if ';' in mimetypes[mime] else mimetypes[mime]
-         mimetypes[mime] = mimetypes[mime].replace('.desktop', '')
-         mimetypes[mime] = mimetypes[mime].strip()
-
-   return mimetypes
-
-def chmod(current):
-   curses.echo()
-   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in permissions in decimal format: ")
-   perms = gb.scrn.getstr(gb.HEIGHT - 1, 39)
-
-   try:
-      os.chmod(current, int(perms, 8))  
-      rerun()
-   except ValueError, e:
-      printerror(e)
-
-
-def resize():
-   curses.endwin()
-   gb.HEIGHT = gb.scrn.getmaxyx()[0]
-   # reset highlighted line
-   if gb.highlightLineNum >= gb.HEIGHT:
-      gb.highlightLineNum = gb.HEIGHT-2
-
-def find():
-   curses.echo()
-   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in name of file and starting path: ")
-   name, path = gb.scrn.getstr(gb.HEIGHT - 1, 40).split(" ", 1)
-
-   retpath = name + " not found in " + path 
-
-   for root, dirs, files in os.walk(path):
-      if name in files:
-         retpath = os.path.join(root, name)
-
-   displaydir()
-   gb.scrn.addstr(gb.HEIGHT - 1, 0, retpath)
-
-def help():
-   gb.scrn.clear()
-   curses.endwin()
-
-   options = [ { "PG UP" : "-- jump to prev page" } , 
-               { "PG DOWN" : "-- jump to prev page" },
-               { "ENTER" : "-- change directory/open file" },
-               { "BACKSPACE" : "-- go up a directory" },
-               { "DELETE" : "-- delete file/directory" },
-               { "Q" : "-- quit"},
-               { "N" : "-- make directory" },
-               { "M" : "-- rename file/directory" },
-               { "C" : "-- copy file/directory" },
-               { "X" : "-- change permissions (chmod)" },
-               { "H" : "-- this help window" },
-               { "/" : "-- find file" },
-               { "P" : "-- toggle PERMISSIONS column" },
-               { "O" : "-- toggle OWNER column" },
-               { "G" : "-- toggle GROUP column" },
-               { "S" : "-- toggle SIZE column" },
-               { "D" : "-- toggle DATE column" },
-               { "T" : "-- toggle TIME column" },
-               { "+" : "-- turn on all columns" },
-               { "." : "-- toggle view of dot files/directories"}
-             ]
-
-   WIDTH = gb.scrn.getmaxyx()[1]
-
-   if WIDTH > len('FM HELP'):
-      gb.scrn.addstr(0, WIDTH/2 - 4, 'FM HELP', curses.color_pair(2) | curses.A_BOLD)
-      row = 1
-      for option in options:
-         if row < gb.HEIGHT and WIDTH > 10:
-            for key, value in option.iteritems():
-               gb.scrn.addstr(row, 0, key, curses.A_BOLD)
-               gb.scrn.addstr(row, 10, value[0:WIDTH-11])
-            row+=1
-
-   if gb.scrn.getch() == curses.KEY_RESIZE: 
-      resize()
-      help()
-   else:
-      rerun()
-
+# in case an operation fails print error message at the bottom of the screen
 def printerror(e):
-   displaydir()
+   displayscreencontent(gb.cmdoutdict)
    gb.scrn.addstr(gb.HEIGHT - 1, 0, "Error: " + str(e) + \
       ". Press any key to continue.", curses.color_pair(1) | curses.A_BOLD)
 
    if gb.scrn.getch() == curses.KEY_RESIZE: resize()
 
-   displaydir()
+   displayscreencontent(gb.cmdoutdict)
 
-# initlialise colours that will be used in the program
-def initialisecolours():
-   background = curses.COLOR_BLACK
-   # color pairs for display
-   # red for errors
-   curses.init_pair(1, curses.COLOR_RED, curses.COLOR_WHITE)
-   # green for dirs
-   curses.init_pair(2, curses.COLOR_GREEN, background)
-   # white for files
-   curses.init_pair(3, curses.COLOR_WHITE, background)
-   # purple for headings
-   curses.init_pair(4, curses.COLOR_MAGENTA, background)
-   # set colour pairs for dirs (green) and regular files (white)
-   gb.scrn.bkgd(' ', curses.color_pair(3))
+# before closing the program prommpt user to retrieve deleted files from recycle bin.
+def retrievedeletedprompt():
+   if os.path.exists(gb.BINPATH):
+      # if there are files to be retrieved
+      if getDeletedFiles():
+         gb.scrn.addstr(gb.HEIGHT - 1, 0, "Bin is not empty. Press 'y' to retrieve all lost data " \
+                                                + "or any other key to quit." , \
+                                                curses.color_pair(1) | curses.A_BOLD)
 
-   gb.green = curses.color_pair(2)
-   gb.white = curses.color_pair(3)
-   gb.purple = curses.color_pair(4)
-
-def setglobals():
-   gb.highlightLineNum = 1
-   gb.startrow = 0
-   gb.HEIGHT = gb.scrn.getmaxyx()[0]
-   gb.namewidth = 20
-
-   configparsed = parse_config(gb.CONF_PATH, \
-                               gb.COMMENT_CHAR, gb.OPTION_CHAR)
-
-   # extract mimeapps.list and default.list paths from configuration file
-   mimeappslist = configparsed.pop('MIMEAPPSLIST') \
-                  if 'MIMEAPPSLIST' in configparsed \
-                  else ''
-   defaultslist = configparsed.pop('DEFLIST') \
-                  if 'DEFLIST' in configparsed \
-                  else ''
-   
-   gb.DEFLIST_PATH = mimeappslist if os.path.exists(mimeappslist) \
-                                  else defaultslist if os.path.exists(defaultslist) \
-                                  else ''
-   # the rest are custom default programs
-   gb.CUSTOM_DEFAULTS = configparsed
-
-   # set default text opener in case other default programs are unset
-   gb.default_text_prog = gb.CUSTOM_DEFAULTS['default'] \
-                          if 'default' in gb.CUSTOM_DEFAULTS \
-                          else gb.default_text_prog
-
-   gb.DEFAULT_TYPES =  getdefaulttypes()
+      if gb.scrn.getch() == ord('y'):
+         retrieveDeletes()
+               
+      shutil.rmtree(gb.BINPATH)
 
 # run/re-run the displaying of dir contents
 def rerun():
    preparelist()
    setcolpositions()
-   displaydir()
+   displayscreencontent(gb.cmdoutdict)
 
 def main(stdscr):
    # window setup
    gb.scrn = stdscr
    curses.curs_set(0)
 
-   initialisecolours()
-   initialisedisplayoptions()
    setglobals()
+   initialisedisplayoptions()
+   initialisecolours()
 
    rerun()
 
    # user command loop
    while True:
-      current = gb.cmdoutdict[gb.startrow+gb.highlightLineNum]['name']
-      #gb.scrn.addstr(gb.HEIGHT - 1, 1, str(current))
+      # set current file
+      current = gb.cmdoutdict[gb.startrow + gb.highlightLineNum]['name']
 
       # get user command
       c = gb.scrn.getch()
 
-      #quit
-      if c == ord("q"): break
-      # check for screen resize
-      elif c == curses.KEY_RESIZE: 
-         resize()
-         rerun()
-      # move up/down
-      elif c == curses.KEY_UP: updown(gb.UP) 
-      elif c == curses.KEY_DOWN: updown(gb.DOWN)  
-      # go to previous/next 'page' of files
-      elif c == curses.KEY_PPAGE: prevpage()
-      elif c == curses.KEY_NPAGE: nextpage()
-      # refresh
-      elif c == ord("r"): displaydir()
-      # display options
-      # permissions
-      elif c == ord("p"): 
-         gb.protbits = not gb.protbits
-         rerun()
-      # owner
-      elif c == ord("o"): 
-         gb.owner = not gb.owner
-         rerun()
-      # group
-      elif c == ord("g"): 
-         gb.group = not gb.group
-         rerun()
-      # size
-      elif c == ord("s"): 
-         gb.size = not gb.size
-         rerun()
-      # date
-      elif c == ord("d"): 
-         gb.lastModDate = not gb.lastModDate
-         rerun()
-      # time
-      elif c == ord("t"): 
-         gb.lastModTime = not gb.lastModTime
-         rerun()
-      # show all options
-      elif c == ord("+"): 
-         initialisedisplayoptions()
-         rerun()
-      # if it's a dir: change dir
-      # if it's a file: open file with the default program
-      elif c == ord("\n"): 
-         if isdir(current):
-            cd(current)
-         else:
-            openfile(current)
-      # go up a directory
-      elif c == curses.KEY_BACKSPACE: cd('..')
-      # make new directory
-      elif c == ord("n"): mkdir()
-      # delete file/directory
-      elif c == curses.KEY_DC: removeItem(current)
-      # rename/move
-      elif c == ord("m"): rename(current)
-      # copy file
-      elif c == ord("c"): copy(current)
-      elif c == ord("x"): chmod(current)
-      elif c == ord("/"): find()
-      elif c == ord("h"): help()
-      elif c == ord("."): 
-         gb.dotfiles = not gb.dotfiles
-         gb.startrow = 0
+      if c == curses.KEY_UP or c == curses.KEY_DOWN:
+         # move up/down
+         updown(gb.UP, gb.cmdoutdict) if  c == curses.KEY_UP else updown(gb.DOWN, gb.cmdoutdict)
+      else:
+         # check for screen resize
+         if c == curses.KEY_RESIZE: resize()
+         # go to previous 'page' of files
+         elif c == curses.KEY_PPAGE: prevpage()
+         # go to next 'page' of files
+         elif c == curses.KEY_NPAGE: nextpage()
+         # refresh
+         elif c == curses.KEY_F5: displayscreencontent(gb.cmdoutdict)
+         # retrieve deletes
+         elif c == ord("r"): retrieveDeletes() 
+         # display options
+         # permissions
+         elif c == ord("p"): gb.protbits = not gb.protbits
+         # owner
+         elif c == ord("o"): gb.owner = not gb.owner
+         # group
+         elif c == ord("g"): gb.group = not gb.group
+         # size
+         elif c == ord("s"): gb.size = not gb.size
+         # date
+         elif c == ord("d"): gb.lastModDate = not gb.lastModDate
+         # time
+         elif c == ord("t"): gb.lastModTime = not gb.lastModTime
+         # show all options
+         elif c == ord("+"): initialisedisplayoptions()
+         # go up a directory
+         elif c == curses.KEY_BACKSPACE: cd('..')
+         # make new directory
+         elif c == ord("n"): mkdir()
+         # delete file/directory
+         elif c == curses.KEY_DC: removeItem(current)
+         # rename/move
+         elif c == ord("m"): rename(current)
+         # copy file
+         elif c == ord("c"): copy(current) 
+         # chmod
+         elif c == ord("x"): chmod(current)
+         # help file
+         elif c == ord("h"): help()
+         # toggle dot files
+         elif c == ord("."): toggledotfiles()
+         # change dir or open file
+         elif c == ord("\n"): cd(current) if isdir(current) else openfile(current)
+         elif c == ord("q"): # quit
+            retrievedeletedprompt()
+            break
+
          rerun()
 
 if __name__ =='__main__':
