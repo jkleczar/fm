@@ -463,6 +463,11 @@ def cd(name):
    except OSError as e:
       printerror(format(e.strerror))
 
+# go up a directory
+def updir():
+   gb.highlightLineNum = gb.prevhighlight
+   cd('..')
+
 # make directory
 def mkdir():
    curses.echo()
@@ -482,17 +487,19 @@ def mkdir():
 def removeItem(name):
    binpath = gb.BINPATH + os.getcwd()
    try:
-      if not os.path.exists(binpath):
-         os.makedirs(binpath)
-      
       if isdir(name):
          if os.listdir(name): # dir not empty
+            if not os.path.exists(binpath):
+               os.makedirs(binpath)
+
             distutils.dir_util.copy_tree(name, binpath + '/' + name)
             shutil.rmtree(name)
          else:
-            os.mkdir(binpath + '/' + name)
             os.rmdir(name)
       else:
+         if not os.path.exists(binpath):
+               os.makedirs(binpath)
+               
          os.rename(name, binpath + '/' + name)   
    except OSError as e:
       printerror(e)
@@ -543,19 +550,19 @@ def help():
                { "ENTER" : "-- change directory/open file" },
                { "BACKSPACE" : "-- go up a directory" },
                { "DELETE" : "-- delete file/directory" },
-               { "Q" : "-- quit"},
-               { "N" : "-- make directory" },
-               { "M" : "-- rename file/directory" },
-               { "C" : "-- copy file/directory" },
-               { "X" : "-- change permissions (chmod)" },
-               { "H" : "-- this help window" },
-               { "R" : "-- retrieve deleted files"},
-               { "P" : "-- toggle PERMISSIONS column" },
-               { "O" : "-- toggle OWNER column" },
-               { "G" : "-- toggle GROUP column" },
-               { "S" : "-- toggle SIZE column" },
-               { "D" : "-- toggle DATE column" },
-               { "T" : "-- toggle TIME column" },
+               { "q" : "-- quit"},
+               { "n" : "-- make directory" },
+               { "m" : "-- rename file/directory" },
+               { "c" : "-- copy file/directory" },
+               { "x" : "-- change permissions (chmod)" },
+               { "h" : "-- this help window" },
+               { "r" : "-- retrieve deleted files"},
+               { "p" : "-- toggle PERMISSIONS column" },
+               { "o" : "-- toggle OWNER column" },
+               { "g" : "-- toggle GROUP column" },
+               { "s" : "-- toggle SIZE column" },
+               { "d" : "-- toggle DATE column" },
+               { "t" : "-- toggle TIME column" },
                { "+" : "-- turn on all columns" },
                { "." : "-- toggle view of dot files/directories"}
              ]
@@ -607,6 +614,27 @@ def openfile(current):
    
    os.system(executeline)
 
+# find file within current directory
+def findFile():
+   curses.echo()
+   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in filename you want to look for: ")
+   filename = gb.scrn.getstr(gb.HEIGHT - 1, 39)
+
+   filteredFiles = []
+
+   line = {'name': 'NAME', 'permissions': 'PERMISSIONS', 'uid': 'OWNER', 
+           'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
+
+   filteredFiles.append(line)
+
+   for f in gb.cmdoutdict[1:len(gb.cmdoutdict)]:
+      if not isdir(f['name']):
+         if str(filename) in f['name']:
+            filteredFiles.append(f)
+
+   gb.cmdoutdict = filteredFiles
+   curses.noecho()
+
 # in case an operation fails print error message at the bottom of the screen
 def printerror(e):
    displayscreencontent(gb.cmdoutdict)
@@ -616,20 +644,6 @@ def printerror(e):
    if gb.scrn.getch() == curses.KEY_RESIZE: resize()
 
    displayscreencontent(gb.cmdoutdict)
-
-# before closing the program prommpt user to retrieve deleted files from recycle bin.
-def retrievedeletedprompt():
-   if os.path.exists(gb.BINPATH):
-      # if there are files to be retrieved
-      if getDeletedFiles():
-         gb.scrn.addstr(gb.HEIGHT - 1, 0, "Bin is not empty. Press 'y' to retrieve all lost data " \
-                                                + "or any other key to quit." , \
-                                                curses.color_pair(1) | curses.A_BOLD)
-
-      if gb.scrn.getch() == ord('y'):
-         retrieveDeletes()
-               
-      shutil.rmtree(gb.BINPATH)
 
 # run/re-run the displaying of dir contents
 def rerun():
@@ -653,26 +667,50 @@ def main(stdscr):
       # set current file
       current = gb.cmdoutdict[gb.startrow + gb.highlightLineNum]['name']
 
+      gb.scrn.addstr(gb.HEIGHT - 1, 0, str(gb.prevhighlight))
+
       # get user command
       c = gb.scrn.getch()
 
-      if c == curses.KEY_UP or c == curses.KEY_DOWN:
-         # move up/down
-         updown(gb.UP, gb.cmdoutdict) if  c == curses.KEY_UP else updown(gb.DOWN, gb.cmdoutdict)
-      else:
-         # check for screen resize
-         if c == curses.KEY_RESIZE: resize()
+      if c == curses.KEY_UP or c == curses.KEY_DOWN \
+         or c == ord("h") or c == ord("r") or c == ord("q"):
+         # move up
+         if  c == curses.KEY_UP: updown(gb.UP, gb.cmdoutdict) 
+         # move down
+         elif c == curses.KEY_DOWN: updown(gb.DOWN, gb.cmdoutdict)
+         # help file
+         elif c == ord("h"): help()
+         # retrieve deletes
+         elif c == ord("r"): retrieveDeletes()
+         # quit
+         elif c == ord("q"):
+            if os.path.exists(gb.BINPATH) and len(getDeletedFiles()) > 1:
+               gb.scrn.addstr(gb.HEIGHT - 1, 0, "Bin is not empty. Press 'y' to retrieve all lost data " \
+                                                + "or any other key to quit." , \
+                                                curses.color_pair(1) | curses.A_BOLD)
+
+               if gb.scrn.getch() == ord('y'):
+                  retrieveDeletes()
+               else:
+                  shutil.rmtree(gb.BINPATH)
+                  break
+            else:
+               break
+      elif c == curses.KEY_PPAGE or c == curses.KEY_NPAGE or c == curses.KEY_RESIZE \
+           or c == ord("/"):
          # go to previous 'page' of files
-         elif c == curses.KEY_PPAGE: prevpage()
+         if c == curses.KEY_PPAGE: prevpage()
          # go to next 'page' of files
          elif c == curses.KEY_NPAGE: nextpage()
-         # refresh
-         elif c == curses.KEY_F5: displayscreencontent(gb.cmdoutdict)
-         # retrieve deletes
-         elif c == ord("r"): retrieveDeletes() 
+         # filter directory for file string
+         elif c == ord("/"): findFile()
+         # check for screen resize
+         elif c == curses.KEY_RESIZE: resize()
+         displayscreencontent(gb.cmdoutdict)
+      else: 
          # display options
          # permissions
-         elif c == ord("p"): gb.protbits = not gb.protbits
+         if c == ord("p"): gb.protbits = not gb.protbits
          # owner
          elif c == ord("o"): gb.owner = not gb.owner
          # group
@@ -685,8 +723,6 @@ def main(stdscr):
          elif c == ord("t"): gb.lastModTime = not gb.lastModTime
          # show all options
          elif c == ord("+"): initialisedisplayoptions()
-         # go up a directory
-         elif c == curses.KEY_BACKSPACE: cd('..')
          # make new directory
          elif c == ord("n"): mkdir()
          # delete file/directory
@@ -697,16 +733,21 @@ def main(stdscr):
          elif c == ord("c"): copy(current) 
          # chmod
          elif c == ord("x"): chmod(current)
-         # help file
-         elif c == ord("h"): help()
          # toggle dot files
          elif c == ord("."): toggledotfiles()
-         # change dir or open file
-         elif c == ord("\n"): cd(current) if isdir(current) else openfile(current)
-         elif c == ord("q"): # quit
-            retrievedeletedprompt()
-            break
-
+         # go up a directory
+         elif c == curses.KEY_BACKSPACE: 
+            cd('..')
+            gb.highlightLineNum = 1 if not gb.prevhighlight else gb.prevhighlight.pop()
+         elif c == ord("\n"):
+            if isdir(current):
+               gb.prevhighlight.append(gb.highlightLineNum)
+               cd(current)
+               gb.highlightLineNum = 1
+            else:
+               openfile(current)
+         # refresh
+         elif c == curses.KEY_F5: gb.highlightLineNum = 1
          rerun()
 
 if __name__ =='__main__':

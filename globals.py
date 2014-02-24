@@ -8,6 +8,7 @@ class gb:
    startrow = None  # index of first row in cmdoutlines to be displayed
    HEIGHT = None
    highlightLineNum = None
+   prevhighlight = []
    UP = -1
    DOWN = 1
    namewidth = None
