@@ -1,11 +1,13 @@
-===============================================================================
+======================================
 
-Linux Console File Manager FM
+Linux Console File Manager Light FML
 author: Justyna Kleczar
 
-===============================================================================
+======================================
 
-Before running for the first time set an environment variable FMRC to fm.conf:
-export FMRC=/path/to/fm.conf
+Usage:
 
-python fm.py to run from command line
+Before running for the first time set an environment variable FMRC to .fmlrc
+export FMLRC=/path/to/fml.conf
+
+Consult fm.conf to set up default applications for opening files.

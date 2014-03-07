@@ -2,10 +2,10 @@ import os, traceback
 
 # global variables
 class gb:
-   scrn = None  # will point to Curses window object
-   cmdoutdict = [] # output of listdir as a dictionary 
+   scrn = None
+   cmdoutdict = []
    winrow = None  
-   startrow = None  # index of first row in cmdoutlines to be displayed
+   startrow = None
    HEIGHT = None
    highlightLineNum = None
    prevhighlight = []
@@ -15,10 +15,10 @@ class gb:
    COMMENT_CHAR = '#'
    OPTION_CHAR =  '='
    SPLIT_CHAR =  '|'
-   CONF_PATH = os.environ['FMRC']
+   CONF_PATH = None
    DEFLIST_PATH = None
    DEFAULT_TYPES = None
    CUSTOM_DEFAULTS = None
    default_text = 'gedit '
    dotfiles = False
-   BINPATH = '/tmp/FM'
+   BINPATH = '/tmp/' + str(os.getpid())
