@@ -128,11 +128,42 @@ def preparelist():
    gb.cmdoutdict = []
    row = 0
 
+   if gb.SORTING_MODE:
+      sortallbyname(prep)
+   else:
+      sortbyfiletype(prep)
+
+def sortallbyname(preplist):
+   cmdoutfiles = []
+
+   # first store all stat info in a dictionary
+   for ln in preplist:
+      # get and store file info
+      line = getstatinfo(ln)
+
+      if ln[0] == '.':
+         if gb.dotfiles:
+            cmdoutfiles.append(line)
+      else: 
+         cmdoutfiles.append(line)
+
+   # headings first
+   line = {'name': 'NAME', 'permissions': 'PERMISSIONS', 'uid': 'OWNER', 
+           'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
+   gb.cmdoutdict.append(line)
+
+   cmdoutfiles = sorted(cmdoutfiles, key=lambda k : ( k['name'].lower() if k['name'][0] != '.' else k['name'][1:].lower() )) 
+
+   # append the rest of lines
+   gb.cmdoutdict += cmdoutfiles
+
+# sort names then dirs
+def sortbyfiletype(preplist):
    cmdoutdirs = []
    cmdoutfiles = []
 
    # first store all stat info in a dictionary
-   for ln in prep:
+   for ln in preplist:
       # get and store file info
       line = getstatinfo(ln)
 
@@ -147,8 +178,8 @@ def preparelist():
            'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
    gb.cmdoutdict.append(line)
 
-   cmdoutdirs = sorted(cmdoutdirs, key=lambda k: k['name']) 
-   cmdoutfiles = sorted(cmdoutfiles, key=lambda k: k['name']) 
+   cmdoutdirs = sorted(cmdoutdirs, key=lambda k: k['name'].lower()) 
+   cmdoutfiles = sorted(cmdoutfiles, key=lambda k: k['name'].lower()) 
 
    # append the rest of lines
    gb.cmdoutdict += cmdoutdirs + cmdoutfiles
@@ -469,6 +500,8 @@ def mkdir():
 def removeItem(name):
    if gb.highlightLineNum > 0:
       binpath = gb.BINPATH + os.getcwd()
+      oldcmdoutlen = len(gb.cmdoutdict) - gb.startrow - 1
+
       try:
          if isdir(name):
             if os.listdir(name): # dir not empty
@@ -483,18 +516,30 @@ def removeItem(name):
             if not os.path.exists(binpath):
                   os.makedirs(binpath)
                   
-            os.rename(name, binpath + '/' + name)   
+            os.rename(name, binpath + '/' + name)
+         
+         if gb.highlightLineNum == oldcmdoutlen:
+            gb.highlightLineNum -= 1
+         if gb.startrow >= len(gb.cmdoutdict) - 2:
+            gb.startrow -= 1
+            gb.highlightLineNum = 1
       except OSError as e:
          printerror(e)
 
 # rename file
 def rename(source):
    if gb.highlightLineNum > 0:
+      oldcmdoutlen = len(gb.cmdoutdict) - gb.startrow - 1
       curses.echo()
       gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in desired destination: ")
       destination = gb.scrn.getstr(gb.HEIGHT - 1, 29)
       try:
          os.rename(source, destination)
+         if gb.highlightLineNum == oldcmdoutlen:
+            gb.highlightLineNum -= 1
+         if gb.startrow >= len(gb.cmdoutdict) - 2:
+            gb.startrow -= 1
+            gb.highlightLineNum = 1
       except OSError as e:
          printerror(e)
       curses.noecho()
@@ -526,6 +571,17 @@ def chmod(current):
       except ValueError as e:
          printerror(e)
 
+      curses.noecho()
+
+# create file
+def touch(times=None):
+   curses.echo()
+   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in a file name: ")
+   fname = gb.scrn.getstr(gb.HEIGHT - 1, 21)
+
+   with file(fname, 'a'):
+      os.utime(fname, times)
+
 # open help window
 def help():
    gb.scrn.clear()
@@ -536,6 +592,7 @@ def help():
                { "ENTER" : "-- change directory/open file" },
                { "BACKSPACE" : "-- go up a directory" },
                { "DELETE" : "-- delete file/directory" },
+               { "TAB" : "-- toggle sort mode"},
                { "q" : "-- quit"},
                { "n" : "-- make directory" },
                { "m" : "-- rename file/directory" },
@@ -556,7 +613,7 @@ def help():
    WIDTH = gb.scrn.getmaxyx()[1]
 
    if WIDTH > len('FM HELP'):
-      gb.scrn.addstr(0, WIDTH // 2 - 4, 'FM HELP', curses.color_pair(2) | curses.A_BOLD)
+      gb.scrn.addstr(0, WIDTH // 2 - 4, 'FML HELP', curses.color_pair(2) | curses.A_BOLD)
       row = 1
       for option in options:
          if row < gb.HEIGHT and WIDTH > 10:
@@ -671,8 +728,14 @@ def main(stdscr):
 
    # user command loop
    while True:
+      #with open("../test.txt", "a") as myfile:
+      #   myfile.write(str(gb.highlightLineNum))
+
       # set current file
       current = gb.cmdoutdict[gb.startrow + gb.highlightLineNum]['name']
+
+      gb.scrn.addstr(gb.HEIGHT - 1, 0, str(gb.startrow))
+      gb.scrn.addstr(gb.HEIGHT - 1, 5, str(len(gb.cmdoutdict) - 1))
 
       # get user command
       c = gb.scrn.getch()
@@ -727,8 +790,12 @@ def main(stdscr):
          elif c == ord("c"): copy(current) 
          # chmod
          elif c == ord("x"): chmod(current)
+         # create file
+         elif c == ord("f"): touch()
          # toggle dot files
          elif c == ord("."): toggledotfiles()
+         # switch between sorting modes
+         elif c == ord("\t"): gb.SORTING_MODE = not gb.SORTING_MODE
          # go up a directory
          elif c == curses.KEY_BACKSPACE: updir() 
          # refresh

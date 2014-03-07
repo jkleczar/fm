@@ -14,11 +14,10 @@ class gb:
    namewidth = None
    COMMENT_CHAR = '#'
    OPTION_CHAR =  '='
-   SPLIT_CHAR =  '|'
    CONF_PATH = None
    DEFLIST_PATH = None
    DEFAULT_TYPES = None
    CUSTOM_DEFAULTS = None
-   default_text = 'gedit '
    dotfiles = False
    BINPATH = '/tmp/' + str(os.getpid())
+   SORTING_MODE = True

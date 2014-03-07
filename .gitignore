@@ -1,1 +1,2 @@
-globals.pyc
+*.pyc
+__pycache__
