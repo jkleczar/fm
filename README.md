@@ -7,7 +7,9 @@ author: Justyna Kleczar
 
 Usage:
 
-Before running for the first time set an environment variable FMRC to .fmlrc
-export FMLRC=/path/to/fml.conf
+./install.sh
 
-Consult fm.conf to set up default applications for opening files.
+run as 'fml' from command line.
+
+Consult .fmlrc to set up default applications for opening files.
+>>>>>>> 60b64ee4ac15f03b51daecafe91edd1f6daaaf74
