@@ -1,0 +1,31 @@
+# DEFAULT APPLICATIONS # 
+
+# By default, FML uses programs defined in mimeapps.list 
+# and defaults.list for opening applications.
+
+# Paths to mimeapps.list and defaults.list:
+
+# MIMEAPPSLIST = ~/.local/share/applications/mimeapps.list
+# MIMEAPPSLIST = /usr/local/share/applications/mimeapps.list
+DEFLIST = /usr/share/applications/defaults.list
+
+# Default program for any other text file types 
+default = gedit
+
+# CUSTOM APPLICCATIONS #
+
+# You can also specify your own way for opening files with
+# certain extensions.
+
+# Usage: 
+# .fileextension = programname flags <FILE> postconditions 
+# Please use <FILE> (literally) in place of name of the file
+# you wish to open.
+
+# eg.    .txt = gedit <FILE>
+# eg.    .pdf = evince --page-index=2 <FILE>
+
+.txt = gnome-terminal -e 'vi <FILE>'
+.py = subl <FILE>
+# .pdf = evince <FILE> 2>/dev/null
+
