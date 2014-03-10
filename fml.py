@@ -8,7 +8,7 @@ from grp import getgrgid
 # set global variables
 def setglobals():
    gb.highlightLineNum = 1
-   gb.startrow = 1
+   gb.startrow = 0
    gb.HEIGHT = gb.scrn.getmaxyx()[0]
    gb.namewidth = 20
 
@@ -43,16 +43,19 @@ def setglobals():
          gb.CUSTOMKEYSTROKES[key] = configvals[key]
 
    gb.DEFAULT_TYPES =  getdefaulttypes()
+
+   gb.DEFKEYSTROKES = preparedefstrokes(gb.KEYS)
    gb.CUSTOMKEYSTROKES = preparedefstrokes(gb.CUSTOMKEYSTROKES)
 
 # format default strokes for curses
 def preparedefstrokes(strokes):
+   newstrokes = {}
    for key, value in strokes.items():
       if 'KEY' in value:
-         strokes[key] = 'curses.' + value
+         newstrokes[key] = 'curses.' + value
       else:
-         strokes[key] = "ord('" + value + "')"
-   return strokes
+         newstrokes[key] = "ord('" + value + "')"
+   return newstrokes
 
 # parse a config file of format 
 # option = value
@@ -197,9 +200,7 @@ def sortbyfiletype(preplist):
          cmdoutdirs.append(line) if isdir(ln) else cmdoutfiles.append(line)
 
    # headings first
-   line = {'name': 'NAME', 'permissions': 'PERMISSIONS', 'uid': 'OWNER', 
-           'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
-   gb.cmdoutdict.append(line)
+   gb.cmdoutdict.append(gb.HEADINGS)
 
    cmdoutdirs = sorted(cmdoutdirs, key=lambda k: k['name'].lower()) 
    cmdoutfiles = sorted(cmdoutfiles, key=lambda k: k['name'].lower()) 
@@ -563,6 +564,8 @@ def adjusthighligtedline():
       gb.startrow = 1
       if gb.highlightLineNum == oldcmdoutlen:
          gb.highlightLineNum -= 1
+   elif gb.highlightLineNum == oldcmdoutlen:
+         gb.highlightLineNum -= 1
    if gb.startrow >= len(gb.cmdoutdict) - 2:
       gb.startrow -= 1
       gb.highlightLineNum = 1
@@ -620,9 +623,11 @@ def help():
                { "TAB" : "-- toggle sort mode"},
                { "q" : "-- quit"},
                { "n" : "-- make directory" },
+               { "f" : "-- create file (touch)" },
                { "m" : "-- rename file/directory" },
                { "c" : "-- copy file/directory" },
                { "x" : "-- change permissions (chmod)" },
+               { "/" : "-- find item" },
                { "h" : "-- this help window" },
                { "r" : "-- retrieve deleted files"},
                { "p" : "-- toggle PERMISSIONS column" },
@@ -632,6 +637,7 @@ def help():
                { "d" : "-- toggle DATE column" },
                { "t" : "-- toggle TIME column" },
                { "+" : "-- turn on all columns" },
+               { "-" : "-- turn off all columns" },
                { "." : "-- toggle view of dot files/directories"}
              ]
 
@@ -684,15 +690,10 @@ def openfile(current):
 # find file within current directory
 def findFile():
    curses.echo()
-   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in filename you want to look for: ")
-   filename = gb.scrn.getstr(gb.HEIGHT - 1, 39)
-
+   gb.scrn.addstr(gb.HEIGHT - 1, 0, "Type in the item you're looking for': ")
+   filename = gb.scrn.getstr(gb.HEIGHT - 1, 38)
    filteredFiles = []
-
-   line = {'name': 'NAME', 'permissions': 'PERMISSIONS', 'uid': 'OWNER', 
-           'gid': 'GROUP', 'size': 'SIZE', 'modDate': 'DATE', 'modTime': 'TIME'}
-
-   filteredFiles.append(line)
+   filteredFiles.append(gb.HEADINGS)
 
    for f in gb.cmdoutdict[1:len(gb.cmdoutdict)]:
       if filename.decode(encoding='UTF-8') in f['name']:
@@ -730,7 +731,7 @@ def quit():
       sys.exit()
 
 def getKey(KEY):
-   return eval(gb.CUSTOMKEYSTROKES[KEY]) if KEY in gb.CUSTOMKEYSTROKES else eval(gb.KEYS[KEY])
+   return eval(gb.CUSTOMKEYSTROKES[KEY]) if KEY in gb.CUSTOMKEYSTROKES else eval(gb.DEFKEYSTROKES[KEY])
 
 # run/re-run the displaying of dir contents
 def rerun():
