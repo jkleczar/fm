@@ -728,14 +728,8 @@ def main(stdscr):
 
    # user command loop
    while True:
-      #with open("../test.txt", "a") as myfile:
-      #   myfile.write(str(gb.highlightLineNum))
-
       # set current file
       current = gb.cmdoutdict[gb.startrow + gb.highlightLineNum]['name']
-
-      gb.scrn.addstr(gb.HEIGHT - 1, 0, str(gb.startrow))
-      gb.scrn.addstr(gb.HEIGHT - 1, 5, str(len(gb.cmdoutdict) - 1))
 
       # get user command
       c = gb.scrn.getch()
