@@ -7,7 +7,7 @@ author: Justyna Kleczar
 
 Usage:
 
-./install.sh
+./install
 
 run as 'fml' from command line.
 
