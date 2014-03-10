@@ -1,4 +1,7 @@
-# DEFAULT APPLICATIONS # 
+# CONFIGURATION FILES FOR DEFAULT APPLICATIONS, CUSTOM APPLICATIONS 
+# AND KEY STROKES 
+
+*** DEFAULT APPLICATIONS *** 
 
 # By default, FML uses programs defined in mimeapps.list 
 # and defaults.list for opening applications.
@@ -12,7 +15,7 @@ DEFLIST = /usr/share/applications/defaults.list
 # Default program for any other text file types 
 default = gedit
 
-# CUSTOM APPLICCATIONS #
+*** CUSTOM APPLICATIONS ***
 
 # You can also specify your own way for opening files with
 # certain extensions.
@@ -27,5 +30,32 @@ default = gedit
 
 .txt = gnome-terminal -e 'vi <FILE>'
 .py = subl <FILE>
-# .pdf = evince <FILE> 2>/dev/null
 
+*** KEY STROKES ***
+
+# PREV_PAGE = KEY_PPAGE
+# NEXT_PAGE = KEY_NPAGE
+# HELP = h
+# UP_DIR = KEY_BACKSPACE
+# DELETE = KEY_DC
+# RETRIEVE = r
+# MKDIR = n
+# MOVE = m
+# COPY = c
+# CHMOD = x
+# TOUCH = f
+# FIND = /
+# SORT_SWITCH = \t
+# PERMS_TOGGLE = p
+# OWNER_TOGGLE = o
+# GROUP_TOGGLE = g
+# SIZE_TOGGLE = s
+# DATE_TOGGLE = d
+# TIME_TOGGLE = t
+# SHOW_ALL_COLS = +
+# HIDE_ALL_COLS = -
+# DOT_TOGGLE = . 
+# REFRESH = KEY_F5
+# QUIT = q
+
+*** END OF FILE ***
