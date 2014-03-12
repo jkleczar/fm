@@ -642,7 +642,6 @@ def help():
              ]
 
    WIDTH = gb.scrn.getmaxyx()[1]
-
    if WIDTH > len('FM HELP'):
       gb.scrn.addstr(0, WIDTH // 2 - 4, 'FML HELP', curses.color_pair(2) | curses.A_BOLD)
       row = 1
@@ -812,7 +811,7 @@ def main(stdscr):
       # check for screen resize
       elif c == curses.KEY_RESIZE: resize(); displscreen(gb.cmdoutdict)
       # refresh
-      elif c == getKey('REFRESH'): gb.highlightLineNum = 1; rerun()
+      elif c == getKey('REFRESH'): gb.highlightLineNum = 1; gb.namewidth = 20; rerun()
       # quit
       elif c == getKey('QUIT'): quit()
 

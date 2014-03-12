@@ -1,6 +1,5 @@
 import os, traceback
 
-# global variables
 class gb:
    scrn = None
    UP = -1

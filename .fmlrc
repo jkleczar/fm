@@ -30,6 +30,7 @@ default = gedit
 
 .txt = gnome-terminal -e 'vi <FILE>'
 .py = subl <FILE>
+.ppt = libreoffice <FILE>
 
 *** KEY STROKES ***
 
