@@ -612,38 +612,13 @@ def touch(times=None):
    with file(fname, 'a'):
       os.utime(fname, times)
 
+   curses.noecho()
    adjusthighligtedline()
 
 # open help window
 def help():
    gb.scrn.clear()
    curses.endwin()
-
-   options = [ { "PG UP" : "-- jump to prev page" } , 
-               { "PG DOWN" : "-- jump to next page" },
-               { "ENTER" : "-- change directory/open file" },
-               { "BACKSPACE" : "-- go up a directory" },
-               { "DELETE" : "-- delete file/directory" },
-               { "TAB" : "-- toggle sort mode"},
-               { "q" : "-- quit"},
-               { "n" : "-- make directory" },
-               { "f" : "-- create file (touch)" },
-               { "m" : "-- rename file/directory" },
-               { "c" : "-- copy file/directory" },
-               { "x" : "-- change permissions (chmod)" },
-               { "/" : "-- find item" },
-               { "h" : "-- this help window" },
-               { "r" : "-- retrieve deleted files"},
-               { "p" : "-- toggle PERMISSIONS column" },
-               { "o" : "-- toggle OWNER column" },
-               { "g" : "-- toggle GROUP column" },
-               { "s" : "-- toggle SIZE column" },
-               { "d" : "-- toggle DATE column" },
-               { "t" : "-- toggle TIME column" },
-               { "+" : "-- turn on all columns" },
-               { "-" : "-- turn off all columns" },
-               { "." : "-- toggle view of dot files/directories"}
-       ]
 
    WIDTH = gb.scrn.getmaxyx()[1]
    if WIDTH > len('FM HELP'):
@@ -723,18 +698,19 @@ def printerror(e):
 def quit():
    if os.path.exists(gb.TRASH_PATH) and len(getDeletedFiles()) > 1:
       gb.scrn.addstr(gb.HEIGHT - 1, 0, "Bin is not empty. Press 'y' to open file retriever " \
-                                             + "or any other key to quit." , \
+                                             + "or 'n' to quit." , \
                                              curses.color_pair(1) | curses.A_BOLD)
-      if gb.scrn.getch() == ord('y'):
-         retrieveDeletes()
-      else:
-         shutil.rmtree(gb.TRASH_PATH)
-         sys.exit()
+
+      while True:
+         c = gb.scrn.getch() 
+         if c == ord('y'):
+            retrieveDeletes()
+            break 
+         elif c == ord('n'):
+            shutil.rmtree(gb.TRASH_PATH)
+            sys.exit()
    else:
       sys.exit()
-
-#def gb.KEYS[KEY):
-#   return eval(gb.CUSTOM_KEY_STOKES[KEY]) if KEY in gb.CUSTOM_KEY_STOKES else eval(gb.DEF_KEY_STOKES[KEY])
 
 # run/re-run the displaying of dir contents
 def rerun():
