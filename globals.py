@@ -5,24 +5,24 @@ class gb:
    UP = -1
    DOWN = 1
    cmdoutdict = []
-   winrow = None  
+   winrow =  None  
    startrow = None
-   highlightLineNum = None
+   highlightlinenum = None
    prevhighlight = []
    namewidth = None
    dotfiles = False
-   SORTING_MODE = True
+   sortmode = True
    HEIGHT = None
    COMMENT_CHAR = '#'
    OPTION_CHAR =  '='
    CONF_PATH = None
    DEFLIST_PATH = None
    DEFAULT_TYPES = None
-   CUSTOM_DEFAULTS = None
-   default_text_prog = None
-   CUSTOMKEYSTROKES = None
-   BINPATH = '/tmp/' + str(os.getpid())
-   DEFKEYSTROKES = None
+   CUSTOM_PROGRAMS = None
+   DEFAULT_TEXT = None
+   CUSTOM_KEY_STROKES = None
+   TRASH_PATH = '/tmp/' + str(os.getpid())
+   CKEYS = None
    KEYS = { 'PREV_PAGE' : 'KEY_PPAGE',
             'NEXT_PAGE' : 'KEY_NPAGE',
             'HELP' : 'h',

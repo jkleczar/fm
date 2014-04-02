@@ -10,10 +10,13 @@
 
 # MIMEAPPSLIST = ~/.local/share/applications/mimeapps.list
 # MIMEAPPSLIST = /usr/local/share/applications/mimeapps.list
-DEFLIST = /usr/share/applications/defaults.list
+# DEFLIST = /usr/share/applications/defaults.list
 
 # Default program for any other text file types 
-default = gedit
+# Usage: 
+# default = programname flags <FILE> postconditions 
+
+default = gedit <FILE>
 
 *** CUSTOM APPLICATIONS ***
 
@@ -43,7 +46,7 @@ default = gedit
 # MKDIR = n
 # MOVE = m
 # COPY = c
-# CHMOD = x
+CHMOD = w
 # TOUCH = f
 # FIND = /
 # SORT_SWITCH = \t
