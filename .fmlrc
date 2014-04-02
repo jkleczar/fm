@@ -46,7 +46,7 @@ default = gedit <FILE>
 # MKDIR = n
 # MOVE = m
 # COPY = c
-CHMOD = w
+# CHMOD = w
 # TOUCH = f
 # FIND = /
 # SORT_SWITCH = \t
@@ -61,5 +61,24 @@ CHMOD = w
 # DOT_TOGGLE = . 
 # REFRESH = KEY_F5
 # QUIT = q
+
+# List of available special keys:
+# KEY HOME
+# KEY NPAGE
+# KEY PPAGE
+# KEY DOWN
+# KEY UP
+# KEY LEFT
+# KEY RIGHT
+# KEY BACKSPACE
+# KEY F0
+# KEY Fn
+# KEY DC
+# KEY IC
+# KEY END
+
+# For more special keys supported by Curses library see:
+# http://docs.python.org/2/library/curses.html#constants
+
 
 *** END OF FILE ***
