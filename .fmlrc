@@ -9,8 +9,8 @@
 # Paths to mimeapps.list and defaults.list:
 
 # MIMEAPPSLIST = ~/.local/share/applications/mimeapps.list
-# MIMEAPPSLIST = /usr/local/share/applications/mimeapps.list
-# DEFLIST = /usr/share/applications/defaults.list
+MIMEAPPSLIST = /usr/local/share/applications/mimeapps.list
+DEFLIST = /usr/share/applications/defaults.list
 
 # Default program for any other text file types 
 # Usage: 
